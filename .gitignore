@@ -1,0 +1,26 @@
+# IDE Configuration
+.idea/
+.vscode/
+
+# Build Artifacts
+target/
+
+# Database Files
+data/
+
+# Maven Installation
+apache-maven-3.9.9/
+
+# Documentation
+TECHNICAL_REPORT.md
+Issue.md
+
+# Configuration
+config.properties
+
+# Logs
+*.log
+
+# OS Files
+.DS_Store
+Thumbs.db
