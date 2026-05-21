@@ -1,12 +1,10 @@
 package com.jobqueue.ui;
 
 import com.jobqueue.model.*;
-import javafx.geometry.Pos;
+import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.layout.GridPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 
@@ -23,201 +21,184 @@ public class AddJobDialog {
         stage.setTitle("New Job");
         stage.setResizable(false);
 
-        VBox root = new VBox(16);
-        root.getStyleClass().add("main-layout");
+        VBox root = new VBox(14);
         root.setStyle("-fx-background-color: #0d1117; -fx-padding: 24;");
-        root.setMinWidth(420);
+        root.setMinWidth(460);
 
         Label title = new Label("Create New Job");
         title.setStyle("-fx-font-size: 16px; -fx-font-weight: 700; -fx-text-fill: #e6edf3;");
 
         Separator sep = new Separator();
 
-        // Priority + Type row
-        HBox typeRow = new HBox(12);
-        typeRow.setAlignment(Pos.CENTER_LEFT);
-
-        VBox priorityBox = new VBox(6);
-        Label priorityLbl = new Label("Priority");
-        priorityLbl.getStyleClass().add("label-secondary");
-        ComboBox<JobPriority> priorityCb = new ComboBox<>();
-        priorityCb.getItems().addAll(JobPriority.values());
-        priorityCb.setValue(JobPriority.MEDIUM);
-        priorityBox.getChildren().addAll(priorityLbl, priorityCb);
-
-        VBox typeBox = new VBox(6);
-        Label typeLbl = new Label("Job Type");
-        typeLbl.getStyleClass().add("label-secondary");
+        // ── Type selector ──────────────────────────────────────────────────────
         ComboBox<String> typeCb = new ComboBox<>();
-        typeCb.getItems().addAll("Email", "Print", "Database", "File", "Notification");
+        typeCb.getItems().addAll("Email", "Database", "File", "Print", "Notification");
         typeCb.setValue("Email");
-        typeBox.getChildren().addAll(typeLbl, typeCb);
+        typeCb.setMaxWidth(Double.MAX_VALUE);
 
-        typeRow.getChildren().addAll(priorityBox, typeBox);
+        // ── Priority selector ──────────────────────────────────────────────────
+        ComboBox<JobPriority> prioCb = new ComboBox<>();
+        prioCb.getItems().addAll(JobPriority.values());
+        prioCb.setValue(JobPriority.MEDIUM);
+        prioCb.setMaxWidth(Double.MAX_VALUE);
 
-        // Dynamic fields area
-        GridPane fields = new GridPane();
-        fields.setHgap(12);
-        fields.setVgap(10);
+        // ── Dynamic fields container ───────────────────────────────────────────
+        VBox dynamicFields = new VBox(10);
+        dynamicFields.setPadding(new Insets(4, 0, 0, 0));
 
-        buildEmailFields(fields);
+        // Email fields
+        TextField recipientField = new TextField();
+        recipientField.setPromptText("e.g. manager@company.com");
+        TextField subjectField   = new TextField();
+        subjectField.setPromptText("Email subject");
+        TextArea  bodyArea       = new TextArea();
+        bodyArea.setPromptText("Email body...");
+        bodyArea.setPrefRowCount(3);
+        bodyArea.setWrapText(true);
 
-        typeCb.setOnAction(e -> {
-            fields.getChildren().clear();
+        // Database fields
+        ComboBox<QueryType> queryTypeCb = new ComboBox<>();
+        queryTypeCb.getItems().addAll(QueryType.values());
+        queryTypeCb.setValue(QueryType.SELECT);
+        queryTypeCb.setMaxWidth(Double.MAX_VALUE);
+        TextArea sqlArea = new TextArea();
+        sqlArea.setPromptText("SELECT * FROM users WHERE ...");
+        sqlArea.setPrefRowCount(3);
+        sqlArea.setWrapText(true);
+
+        // File fields
+        ComboBox<FileOperation> fileOpCb = new ComboBox<>();
+        fileOpCb.getItems().addAll(FileOperation.values());
+        fileOpCb.setValue(FileOperation.COPY);
+        fileOpCb.setMaxWidth(Double.MAX_VALUE);
+        TextField srcField = new TextField();
+        srcField.setPromptText("/path/to/source");
+        TextField dstField = new TextField();
+        dstField.setPromptText("/path/to/destination");
+
+        // Print field
+        TextArea printArea = new TextArea();
+        printArea.setPromptText("Document content to print...");
+        printArea.setPrefRowCount(4);
+        printArea.setWrapText(true);
+
+        // Notification field
+        TextArea notifArea = new TextArea();
+        notifArea.setPromptText("Notification message...");
+        notifArea.setPrefRowCount(3);
+        notifArea.setWrapText(true);
+
+        // ── Populate fields based on selected type ─────────────────────────────
+        Runnable populate = () -> {
+            dynamicFields.getChildren().clear();
             switch (typeCb.getValue()) {
-                case "Email"        -> buildEmailFields(fields);
-                case "Print"        -> buildPrintFields(fields);
-                case "Database"     -> buildDatabaseFields(fields);
-                case "File"         -> buildFileFields(fields);
-                case "Notification" -> buildNotificationFields(fields);
+                case "Email" -> dynamicFields.getChildren().addAll(
+                    labeled("To (Recipient)", recipientField),
+                    labeled("Subject", subjectField),
+                    labeled("Body", bodyArea));
+                case "Database" -> dynamicFields.getChildren().addAll(
+                    labeled("Query Type", queryTypeCb),
+                    labeled("SQL", sqlArea));
+                case "File" -> dynamicFields.getChildren().addAll(
+                    labeled("Operation", fileOpCb),
+                    labeled("Source Path", srcField),
+                    labeled("Destination Path", dstField));
+                case "Print" -> dynamicFields.getChildren().add(
+                    labeled("Content", printArea));
+                case "Notification" -> dynamicFields.getChildren().add(
+                    labeled("Message", notifArea));
             }
-        });
+        };
+
+        typeCb.setOnAction(e -> populate.run());
+        populate.run();
+
+        // ── Error / submit ─────────────────────────────────────────────────────
+        Label errorLabel = new Label();
+        errorLabel.setStyle("-fx-text-fill: #f85149; -fx-font-size: 12px;");
+        errorLabel.setWrapText(true);
 
         Button createBtn = new Button("Add to Queue");
-        createBtn.getStyleClass().add("btn-primary");
         createBtn.setMaxWidth(Double.MAX_VALUE);
-
-        Label errorLabel = new Label();
-        errorLabel.getStyleClass().add("label-error");
+        createBtn.setStyle("-fx-background-color: #1f6feb; -fx-text-fill: white;" +
+                           "-fx-font-weight: 700; -fx-font-size: 13px; -fx-padding: 8 0;");
 
         createBtn.setOnAction(e -> {
-            String id = "J-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-            JobPriority prio = priorityCb.getValue();
-            String type = typeCb.getValue();
-
+            errorLabel.setText("");
             try {
-                createdJob = buildJob(id, prio, type, fields);
+                String id = "JOB-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
+                JobPriority prio = prioCb.getValue();
+                Job job = buildJob(id, prio, typeCb.getValue(),
+                        recipientField, subjectField, bodyArea,
+                        queryTypeCb, sqlArea,
+                        fileOpCb, srcField, dstField,
+                        printArea, notifArea);
+                createdJob = job;
                 stage.close();
             } catch (IllegalArgumentException ex) {
                 errorLabel.setText(ex.getMessage());
             }
         });
 
-        root.getChildren().addAll(title, sep, typeRow, fields, createBtn, errorLabel);
+        root.getChildren().addAll(
+            title, sep,
+            labeled("Job Type", typeCb),
+            labeled("Priority", prioCb),
+            dynamicFields,
+            errorLabel, createBtn);
 
         Scene scene = new Scene(root);
         scene.getStylesheets().add(getClass().getResource("/style.css").toExternalForm());
         stage.setScene(scene);
     }
 
-    // ── Field builders ───────────────────────────────────────────────
-
-    private void buildEmailFields(GridPane g) {
-        g.add(label("Recipient"), 0, 0); g.add(field("to@company.com", "email-recipient"), 1, 0);
-        g.add(label("Subject"),   0, 1); g.add(field("Subject line",  "email-subject"),    1, 1);
-        g.add(label("Body"),      0, 2); g.add(area("Message body…",  "email-body"),       1, 2);
-    }
-
-    private void buildPrintFields(GridPane g) {
-        g.add(label("Content"), 0, 0); g.add(area("Content to print…", "print-content"), 1, 0);
-    }
-
-    private void buildDatabaseFields(GridPane g) {
-        g.add(label("Query Type"), 0, 0);
-        ComboBox<QueryType> qtCb = new ComboBox<>();
-        qtCb.getItems().addAll(QueryType.values());
-        qtCb.setValue(QueryType.SELECT);
-        qtCb.setId("db-querytype");
-        g.add(qtCb, 1, 0);
-        g.add(label("SQL"),        0, 1); g.add(area("SELECT * FROM …", "db-sql"), 1, 1);
-    }
-
-    private void buildFileFields(GridPane g) {
-        g.add(label("Operation"), 0, 0);
-        ComboBox<FileOperation> opCb = new ComboBox<>();
-        opCb.getItems().addAll(FileOperation.values());
-        opCb.setValue(FileOperation.COPY);
-        opCb.setId("file-operation");
-        g.add(opCb, 1, 0);
-        g.add(label("Source"),      0, 1); g.add(field("/source/path",      "file-source"), 1, 1);
-        g.add(label("Destination"), 0, 2); g.add(field("/destination/path", "file-dest"),   1, 2);
-    }
-
-    private void buildNotificationFields(GridPane g) {
-        g.add(label("Message"), 0, 0); g.add(area("Notification message…", "notif-message"), 1, 0);
-    }
-
-    // ── Job factory ──────────────────────────────────────────────────
-
-    private Job buildJob(String id, JobPriority prio, String type, GridPane g) {
-        switch (type) {
+    private Job buildJob(String id, JobPriority prio, String type,
+                         TextField recipient, TextField subject, TextArea body,
+                         ComboBox<QueryType> queryType, TextArea sql,
+                         ComboBox<FileOperation> fileOp, TextField src, TextField dst,
+                         TextArea print, TextArea notif) {
+        return switch (type) {
             case "Email" -> {
-                String to      = require(text(g, "email-recipient"), "Recipient is required");
-                String subject = require(text(g, "email-subject"),   "Subject is required");
-                String body    = text(g, "email-body");
-                return new EmailJob(id, prio, to, subject, body);
-            }
-            case "Print" -> {
-                String content = require(text(g, "print-content"), "Content is required");
-                return new PrintJob(id, prio, content);
+                require(recipient.getText(), "Recipient is required.");
+                require(subject.getText(),   "Subject is required.");
+                yield new EmailJob(id, prio,
+                        recipient.getText().trim(), subject.getText().trim(), body.getText().trim());
             }
             case "Database" -> {
-                QueryType qt = comboVal(g, "db-querytype", QueryType.class);
-                String sql = require(text(g, "db-sql"), "SQL is required");
-                return new DatabaseJob(id, prio, qt, sql);
+                require(sql.getText(), "SQL query is required.");
+                yield new DatabaseJob(id, prio, queryType.getValue(), sql.getText().trim());
             }
             case "File" -> {
-                FileOperation op  = comboVal(g, "file-operation", FileOperation.class);
-                String src  = require(text(g, "file-source"), "Source path is required");
-                String dest = text(g, "file-dest");
-                return new FileJob(id, prio, op, src, dest);
+                require(src.getText(), "Source path is required.");
+                if (fileOp.getValue() != FileOperation.DELETE)
+                    require(dst.getText(), "Destination path is required.");
+                yield new FileJob(id, prio, fileOp.getValue(),
+                        src.getText().trim(), dst.getText().trim());
+            }
+            case "Print" -> {
+                require(print.getText(), "Content is required.");
+                yield new PrintJob(id, prio, print.getText().trim());
             }
             case "Notification" -> {
-                String msg = require(text(g, "notif-message"), "Message is required");
-                return new NotificationJob(id, prio, msg);
+                require(notif.getText(), "Message is required.");
+                yield new NotificationJob(id, prio, notif.getText().trim());
             }
-            default -> throw new IllegalArgumentException("Unknown job type: " + type);
-        }
+            default -> throw new IllegalArgumentException("Unknown type: " + type);
+        };
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────
-
-    private Label label(String text) {
-        Label l = new Label(text);
-        l.getStyleClass().add("label-secondary");
-        l.setMinWidth(90);
-        return l;
+    private void require(String value, String error) {
+        if (value == null || value.isBlank())
+            throw new IllegalArgumentException(error);
     }
 
-    private TextField field(String prompt, String id) {
-        TextField f = new TextField();
-        f.setPromptText(prompt);
-        f.setId(id);
-        f.setMinWidth(240);
-        return f;
-    }
-
-    private TextArea area(String prompt, String id) {
-        TextArea a = new TextArea();
-        a.setPromptText(prompt);
-        a.setId(id);
-        a.setPrefRowCount(3);
-        a.setMinWidth(240);
-        a.setWrapText(true);
-        return a;
-    }
-
-    private String text(GridPane g, String nodeId) {
-        return g.getChildren().stream()
-                .filter(n -> nodeId.equals(n.getId()))
-                .findFirst()
-                .map(n -> n instanceof TextArea ta ? ta.getText().trim()
-                                                   : ((TextField) n).getText().trim())
-                .orElse("");
-    }
-
-    @SuppressWarnings("unchecked")
-    private <T> T comboVal(GridPane g, String nodeId, Class<T> type) {
-        return (T) g.getChildren().stream()
-                .filter(n -> nodeId.equals(n.getId()))
-                .findFirst()
-                .map(n -> ((ComboBox<?>) n).getValue())
-                .orElse(null);
-    }
-
-    private String require(String value, String errorMsg) {
-        if (value == null || value.isBlank()) throw new IllegalArgumentException(errorMsg);
-        return value;
+    private VBox labeled(String label, Control control) {
+        VBox box = new VBox(5);
+        Label lbl = new Label(label);
+        lbl.setStyle("-fx-text-fill: #8b949e; -fx-font-size: 12px;");
+        control.setMaxWidth(Double.MAX_VALUE);
+        box.getChildren().addAll(lbl, control);
+        return box;
     }
 
     public Job showDialog() {

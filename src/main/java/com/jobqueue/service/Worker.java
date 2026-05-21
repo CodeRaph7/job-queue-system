@@ -1,8 +1,6 @@
 package com.jobqueue.service;
 
 import com.jobqueue.model.Job;
-import com.jobqueue.model.JobContext;
-import com.jobqueue.model.JobResult;
 import com.jobqueue.model.JobStatus;
 
 import java.time.LocalDateTime;
@@ -32,37 +30,16 @@ public class Worker extends Thread {
     }
 
     private void executeJob(Job job) {
-        System.out.println("Worker: Executing job " + job.getId() + " with status " + job.getStatus());
-
-        // Skip execution if job is already in terminal state
-        if (job.getStatus() == JobStatus.COMPLETED ||
-                job.getStatus() == JobStatus.FAILED ||
-                job.getStatus() == JobStatus.CANCELLED) {
-            System.out.println("Worker: Skipping job " + job.getId() + " - already in terminal state");
+        // Skip jobs already resolved (e.g. manually marked before the worker picked them up)
+        JobStatus current = job.getStatus();
+        if (current == JobStatus.COMPLETED || current == JobStatus.FAILED
+                || current == JobStatus.CANCELLED) {
             return;
         }
 
+        // Set to RUNNING — job stays here until admin/user manually marks it complete or failed
         job.setStartedAt(LocalDateTime.now());
         scheduler.notifyObservers(job, JobStatus.RUNNING);
-
-        long startMs = System.currentTimeMillis();
-        JobResult result;
-        try {
-            result = job.execute(new JobContext());
-        } catch (Exception e) {
-            result = new JobResult(job.getId(), false, "Unhandled exception: " + e.getMessage(), null);
-        }
-
-        job.setDurationMs(System.currentTimeMillis() - startMs);
-        job.setCompletedAt(LocalDateTime.now());
-        job.setLastResult(result);
-
-        if (result.isSuccess()) {
-            scheduler.notifyObservers(job, JobStatus.COMPLETED);
-        } else {
-            job.setErrorMessage(result.getMessage());
-            scheduler.notifyObservers(job, JobStatus.FAILED);
-        }
     }
 
     public void stopWorker() {

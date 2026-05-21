@@ -39,11 +39,10 @@ public class JobResultRepositoryDAOImpl implements JobResultRepository {
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) {
                 return new JobResult(
-                    rs.getString("job_id"),
-                    rs.getBoolean("success"),
-                    rs.getString("message"),
-                    rs.getString("data")
-                );
+                        rs.getString("job_id"),
+                        rs.getBoolean("success"),
+                        rs.getString("message"),
+                        rs.getString("data"));
             }
         } catch (SQLException e) {
             e.printStackTrace();

@@ -275,8 +275,11 @@ public class MainWindow {
                     setStyle("");
                     return;
                 }
-                setText(statusDot(item) + item);
-                setStyle("-fx-text-fill: " + statusColor(item) + "; -fx-font-weight: 600; -fx-font-size: 12px;");
+                // Employees see RUNNING as PENDING — job is being processed on their behalf
+                String display = ("RUNNING".equals(item) && authenticatedUser.getRole() == Role.USER)
+                        ? "PENDING" : item;
+                setText(statusDot(display) + display);
+                setStyle("-fx-text-fill: " + statusColor(display) + "; -fx-font-weight: 600; -fx-font-size: 12px;");
             }
         });
 
@@ -392,7 +395,9 @@ public class MainWindow {
 
     private void filterJobsByRole() {
         if (authenticatedUser.getRole() == Role.USER) {
-            jobTable.setItems(tableModel.getJobs().filtered(job -> job.getStatus() == JobStatus.PENDING
+            jobTable.setItems(tableModel.getJobs().filtered(job ->
+                    job.getStatus() == JobStatus.PENDING
+                    || job.getStatus() == JobStatus.RUNNING   // displayed as PENDING for employees
                     || job.getStatus() == JobStatus.COMPLETED
                     || job.getStatus() == JobStatus.FAILED));
         } else {

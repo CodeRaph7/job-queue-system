@@ -22,7 +22,8 @@ public class UserRepositoryDAOImpl implements UserRepository {
     public void save(User user) {
         try {
             String sql = "INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)";
-            PreparedStatement stmt = dbConnection.getConnection().prepareStatement(sql, PreparedStatement.RETURN_GENERATED_KEYS);
+            PreparedStatement stmt = dbConnection.getConnection().prepareStatement(sql,
+                    PreparedStatement.RETURN_GENERATED_KEYS);
             String hashedPassword = PasswordUtils.hash(user.getPassword());
             user.setPassword(hashedPassword);
             stmt.setString(1, user.getUsername());
@@ -81,7 +82,8 @@ public class UserRepositoryDAOImpl implements UserRepository {
         try {
             String sql = "SELECT * FROM users";
             ResultSet rs = dbConnection.getConnection().createStatement().executeQuery(sql);
-            while (rs.next()) users.add(mapUser(rs));
+            while (rs.next())
+                users.add(mapUser(rs));
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -102,7 +104,8 @@ public class UserRepositoryDAOImpl implements UserRepository {
         String roleStr = rs.getString("role");
         user.setRole(roleStr != null ? Role.valueOf(roleStr) : Role.USER);
         java.sql.Timestamp ts = rs.getTimestamp("created_at");
-        if (ts != null) user.setCreatedAt(ts.toLocalDateTime());
+        if (ts != null)
+            user.setCreatedAt(ts.toLocalDateTime());
         return user;
     }
 }

@@ -4,7 +4,9 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.Properties;
 
 public class DatabaseConnection {
@@ -13,10 +15,12 @@ public class DatabaseConnection {
 
     private DatabaseConnection() {
         try {
+            new java.io.File("data").mkdirs();
             Class.forName("org.sqlite.JDBC");
             Properties props = loadConfig();
             String url = props.getProperty("db.sqlite.url");
             connection = DriverManager.getConnection(url);
+            connection.createStatement().execute("PRAGMA foreign_keys = ON");
             initDb();
             System.out.println("DB: Connected to SQLite database");
         } catch (Exception e) {
@@ -32,8 +36,6 @@ public class DatabaseConnection {
             props.load(fis);
             fis.close();
         } catch (IOException e) {
-            System.out.println("DB: config.properties not found, using default SQLite configuration");
-            props.setProperty("db.type", "sqlite");
             props.setProperty("db.sqlite.url", "jdbc:sqlite:./data/jobqueue.db");
         }
         return props;
@@ -50,58 +52,155 @@ public class DatabaseConnection {
         return connection;
     }
 
-    private void initDb() {
-        try {
-            // Create tables
-            String sql = "CREATE TABLE IF NOT EXISTS jobs (id VARCHAR(255), priority VARCHAR(50), status VARCHAR(50), type VARCHAR(50), data VARCHAR(1000), created_at TIMESTAMP, started_at TIMESTAMP, completed_at TIMESTAMP, error_message TEXT, retry_count INTEGER DEFAULT 0, duration_ms INTEGER)";
-            connection.createStatement().execute(sql);
+    // ── Schema + seed ──────────────────────────────────────────────────────────
 
-            sql = "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username VARCHAR(50) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, email VARCHAR(100), role VARCHAR(20) DEFAULT 'USER', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
-            connection.createStatement().execute(sql);
+    private void initDb() throws SQLException {
+        createSchema();
+        seedUsers();
+        seedSampleJobs();
+        System.out.println("DB: Database initialized");
+    }
 
-            sql = "CREATE TABLE IF NOT EXISTS job_results (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id VARCHAR(255), success BOOLEAN, message TEXT, data TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (job_id) REFERENCES jobs(id))";
-            connection.createStatement().execute(sql);
+    private void createSchema() throws SQLException {
+        exec("CREATE TABLE IF NOT EXISTS jobs (" +
+             "  id            VARCHAR(255) PRIMARY KEY," +
+             "  priority      VARCHAR(50)," +
+             "  status        VARCHAR(50)," +
+             "  type          VARCHAR(50)," +
+             "  data          TEXT," +
+             "  created_at    TIMESTAMP," +
+             "  started_at    TIMESTAMP," +
+             "  completed_at  TIMESTAMP," +
+             "  error_message TEXT," +
+             "  retry_count   INTEGER DEFAULT 0," +
+             "  duration_ms   INTEGER" +
+             ")");
 
-            // Insert admin users
-            String[] adminUsers = { "admin", "admin1", "admin2", "admin3" };
-            for (String admin : adminUsers) {
-                sql = "INSERT OR IGNORE INTO users (username, password, email, role) VALUES ('" + admin
-                        + "', 'admin123', '" + admin + "@system.com', 'ADMIN')";
-                connection.createStatement().execute(sql);
-            }
+        exec("CREATE TABLE IF NOT EXISTS users (" +
+             "  id         INTEGER PRIMARY KEY AUTOINCREMENT," +
+             "  username   VARCHAR(50) UNIQUE NOT NULL," +
+             "  password   VARCHAR(255) NOT NULL," +
+             "  email      VARCHAR(100)," +
+             "  role       VARCHAR(20) DEFAULT 'USER'," +
+             "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
+             ")");
 
-            // Insert sample jobs with proper JSON data (set to terminal states so they
-            // don't auto-execute) - use DELETE first to ensure clean state
-            sql = "DELETE FROM jobs WHERE id LIKE 'SAMPLE-%'";
-            connection.createStatement().execute(sql);
+        exec("CREATE TABLE IF NOT EXISTS job_results (" +
+             "  id         INTEGER PRIMARY KEY AUTOINCREMENT," +
+             "  job_id     VARCHAR(255) UNIQUE," +
+             "  success    BOOLEAN," +
+             "  message    TEXT," +
+             "  data       TEXT," +
+             "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+             "  FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE" +
+             ")");
 
-            String[] sampleJobs = {
-                    "('SAMPLE-001', 'HIGH', 'COMPLETED', 'PrintJob', '{\"content\":\"Sample pending job\"}')",
-                    "('SAMPLE-002', 'MEDIUM', 'COMPLETED', 'EmailJob', '{\"recipient\":\"test@example.com\",\"subject\":\"Test\",\"body\":\"Sample completed job\"}')",
-                    "('SAMPLE-003', 'LOW', 'FAILED', 'FileJob', '{\"operation\":\"COPY\",\"sourcePath\":\"/tmp/source\",\"destinationPath\":\"/tmp/dest\"}')",
-                    "('SAMPLE-004', 'CRITICAL', 'FAILED', 'NotificationJob', '{\"message\":\"Urgent pending job\"}')"
-            };
-            for (String jobData : sampleJobs) {
-                sql = "INSERT INTO jobs (id, priority, status, type, data) VALUES " + jobData;
-                connection.createStatement().execute(sql);
-            }
+        exec("CREATE INDEX IF NOT EXISTS idx_jobs_status        ON jobs(status)");
+        exec("CREATE INDEX IF NOT EXISTS idx_jobs_priority      ON jobs(priority)");
+        exec("CREATE INDEX IF NOT EXISTS idx_users_username     ON users(username)");
+        exec("CREATE INDEX IF NOT EXISTS idx_job_results_job_id ON job_results(job_id)");
+    }
 
-            // Create indexes
-            sql = "CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)";
-            connection.createStatement().execute(sql);
-            sql = "CREATE INDEX IF NOT EXISTS idx_jobs_priority ON jobs(priority)";
-            connection.createStatement().execute(sql);
-            sql = "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)";
-            connection.createStatement().execute(sql);
-            sql = "CREATE INDEX IF NOT EXISTS idx_job_results_job_id ON job_results(job_id)";
-            connection.createStatement().execute(sql);
-            sql = "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)";
-            connection.createStatement().execute(sql);
+    private void seedUsers() throws SQLException {
+        // Passwords are stored as plaintext here; PasswordUtils.verify() has a
+        // plaintext fallback for passwords that don't match the hashed format.
+        String sql = "INSERT OR IGNORE INTO users (username, password, email, role) VALUES (?, ?, ?, ?)";
+        PreparedStatement stmt = connection.prepareStatement(sql);
 
-            System.out.println("DB: Database initialized with admin users and sample jobs");
-        } catch (SQLException e) {
-            System.out.println("DB: Error initializing database: " + e.getMessage());
-            e.printStackTrace();
+        Object[][] users = {
+            {"CEO",       "CEO123",  "ceo@company.com",       "ADMIN"},
+            {"Adam",      "Adam123", "adam@company.com",      "USER"},
+            {"mouhamed",  "mouha18", "mouhamed@company.com",  "USER"},
+        };
+
+        for (Object[] u : users) {
+            stmt.setString(1, (String) u[0]);
+            stmt.setString(2, (String) u[1]);
+            stmt.setString(3, (String) u[2]);
+            stmt.setString(4, (String) u[3]);
+            stmt.executeUpdate();
         }
+    }
+
+    private void seedSampleJobs() throws SQLException {
+        // Always refresh sample jobs so data/schema changes take effect.
+        exec("DELETE FROM job_results WHERE job_id LIKE 'JOB-%'");
+        exec("DELETE FROM jobs WHERE id LIKE 'JOB-%'");
+
+        LocalDateTime now = LocalDateTime.now();
+
+        String sql = "INSERT INTO jobs " +
+                     "(id, priority, status, type, data, created_at, started_at, completed_at, duration_ms, error_message)" +
+                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        PreparedStatement s = connection.prepareStatement(sql);
+
+        insertJob(s, "JOB-001", "CRITICAL", "COMPLETED", "EmailJob",
+            "{\"recipient\":\"ceo@company.com\",\"subject\":\"Q4 Financial Report Ready\",\"body\":\"The Q4 report has been generated and is pending your review.\"}",
+            now.minusHours(5), now.minusHours(5).plusSeconds(10), now.minusHours(5).plusSeconds(13), 3200L, null);
+
+        insertJob(s, "JOB-002", "HIGH", "FAILED", "DatabaseJob",
+            "{\"queryType\":\"SELECT\",\"sql\":\"SELECT * FROM analytics WHERE date > '2024-01-01'\"}",
+            now.minusHours(3), now.minusHours(3).plusSeconds(5), now.minusHours(3).plusSeconds(12), 7100L,
+            "Connection timeout: analytics DB unreachable");
+
+        insertJob(s, "JOB-003", "MEDIUM", "COMPLETED", "PrintJob",
+            "{\"content\":\"Monthly invoice batch — 247 records\"}",
+            now.minusHours(2), now.minusHours(2).plusSeconds(30), now.minusHours(2).plusMinutes(5), 312000L, null);
+
+        insertJob(s, "JOB-004", "LOW", "COMPLETED", "FileJob",
+            "{\"operation\":\"COPY\",\"sourcePath\":\"/data/exports/report_2024.csv\",\"destinationPath\":\"/archive/2024/\"}",
+            now.minusHours(1).minusMinutes(30), now.minusHours(1).minusMinutes(28), now.minusHours(1).minusMinutes(27), 7400L, null);
+
+        insertJob(s, "JOB-005", "HIGH", "PENDING", "NotificationJob",
+            "{\"message\":\"Scheduled maintenance window: Saturday 02:00–04:00 UTC\"}",
+            now.minusMinutes(15), null, null, null, null);
+
+        insertJob(s, "JOB-006", "MEDIUM", "COMPLETED", "EmailJob",
+            "{\"recipient\":\"alerts@company.com\",\"subject\":\"System Health Check\",\"body\":\"All services are operational.\"}",
+            now.minusHours(1), now.minusHours(1).plusSeconds(2), now.minusHours(1).plusSeconds(4), 2100L, null);
+
+        insertJob(s, "JOB-007", "CRITICAL", "PENDING", "DatabaseJob",
+            "{\"queryType\":\"UPDATE\",\"sql\":\"UPDATE sessions SET expired = 1 WHERE last_active < NOW() - INTERVAL 30 MINUTE\"}",
+            now.minusMinutes(3), null, null, null, null);
+
+        // Seed corresponding job_results for terminal jobs
+        String rSql = "INSERT OR IGNORE INTO job_results (job_id, success, message) VALUES (?, ?, ?)";
+        PreparedStatement r = connection.prepareStatement(rSql);
+
+        Object[][] results = {
+            {"JOB-001", true,  "Email sent successfully"},
+            {"JOB-002", false, "Connection timeout: analytics DB unreachable"},
+            {"JOB-003", true,  "Print successful"},
+            {"JOB-004", true,  "File operation completed"},
+            {"JOB-006", true,  "Email sent successfully"},
+        };
+        for (Object[] res : results) {
+            r.setString(1, (String) res[0]);
+            r.setBoolean(2, (boolean) res[1]);
+            r.setString(3, (String) res[2]);
+            r.executeUpdate();
+        }
+    }
+
+    private void insertJob(PreparedStatement s, String id, String priority, String status,
+                           String type, String data, LocalDateTime created,
+                           LocalDateTime started, LocalDateTime completed,
+                           Long duration, String error) throws SQLException {
+        s.setString(1, id);
+        s.setString(2, priority);
+        s.setString(3, status);
+        s.setString(4, type);
+        s.setString(5, data);
+        s.setString(6, created  != null ? created.toString()   : null);
+        s.setString(7, started  != null ? started.toString()   : null);
+        s.setString(8, completed != null ? completed.toString() : null);
+        if (duration != null) s.setLong(9, duration);
+        else                  s.setNull(9, java.sql.Types.INTEGER);
+        s.setString(10, error);
+        s.executeUpdate();
+    }
+
+    private void exec(String sql) throws SQLException {
+        connection.createStatement().execute(sql);
     }
 }

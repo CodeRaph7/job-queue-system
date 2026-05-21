@@ -13,7 +13,7 @@ public class DatabaseJob extends Job {
     @Override
     public JobResult execute(JobContext context) {
         System.out.println("Executing DB Query [" + queryType + "]: " + sql);
-        return new JobResult(getId(), true, "Query executed", 10);
+        return new JobResult(getId(), true, "Query executed successfully", null);
     }
 
     public QueryType getQueryType() { return queryType; }
