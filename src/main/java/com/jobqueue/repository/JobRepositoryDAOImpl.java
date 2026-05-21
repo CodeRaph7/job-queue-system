@@ -24,8 +24,8 @@ public class JobRepositoryDAOImpl implements JobRepository {
                     INSERT OR REPLACE INTO jobs
                       (id, priority, status, type, data,
                        created_at, started_at, completed_at,
-                       error_message, retry_count, duration_ms)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       error_message, retry_count, duration_ms, assigned_to)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """;
             PreparedStatement stmt = conn.prepareStatement(sql);
             stmt.setString(1, job.getId());
@@ -42,6 +42,7 @@ public class JobRepositoryDAOImpl implements JobRepository {
                 stmt.setLong(11, job.getDurationMs());
             else
                 stmt.setNull(11, Types.INTEGER);
+            stmt.setString(12, job.getAssignedTo());
             stmt.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
@@ -104,6 +105,21 @@ public class JobRepositoryDAOImpl implements JobRepository {
     }
 
     @Override
+    public List<Job> findByAssignedUser(String username) {
+        List<Job> jobs = new ArrayList<>();
+        try {
+            PreparedStatement stmt = dbConnection.getConnection()
+                    .prepareStatement("SELECT * FROM jobs WHERE assigned_to = ? ORDER BY created_at DESC");
+            stmt.setString(1, username);
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) jobs.add(createJobFromResultSet(rs));
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return jobs;
+    }
+
+    @Override
     public void delete(String id) {
         try {
             PreparedStatement stmt = dbConnection.getConnection()
@@ -114,8 +130,6 @@ public class JobRepositoryDAOImpl implements JobRepository {
             e.printStackTrace();
         }
     }
-
-    // ── Deserialization ──────────────────────────────────────────────────────
 
     private Job createJobFromResultSet(ResultSet rs) throws SQLException {
         String id = rs.getString("id");
@@ -153,12 +167,10 @@ public class JobRepositoryDAOImpl implements JobRepository {
         job.setErrorMessage(rs.getString("error_message"));
         job.setRetryCount(rs.getInt("retry_count"));
         long durMs = rs.getLong("duration_ms");
-        if (!rs.wasNull())
-            job.setDurationMs(durMs);
+        if (!rs.wasNull()) job.setDurationMs(durMs);
+        job.setAssignedTo(rs.getString("assigned_to"));
         return job;
     }
-
-    // ── Helpers ──────────────────────────────────────────────────────────────
 
     private String getString(JsonObject obj, String key, String def) {
         return obj.has(key) ? obj.get(key).getAsString() : def;
